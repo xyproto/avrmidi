@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/rakyll/portmidi"
 	"github.com/simulatedsimian/joystick"
 )
 
@@ -22,6 +23,18 @@ func main() {
 		log.Fatalln(err)
 	}
 	defer js.Close()
+
+	portmidi.Initialize()
+	defer portmidi.Terminate()
+
+	deviceID := portmidi.DefaultOutputDeviceID()
+	out, err := portmidi.NewOutputStream(deviceID, 1024, 0)
+	if err != nil {
+		js.Close()
+		// TODO: return instead of Fatalln, so that defer is respected
+		log.Fatalln(err)
+	}
+	defer out.Close()
 
 	axisCount := js.AxisCount()
 
@@ -51,7 +64,9 @@ func main() {
 		rightCalibrated = false // once the range for the right light sensor is wide enough
 	)
 
-	for i := 0; i < 100; i++ {
+	i := 0
+
+	for {
 
 		leftLight := state.AxisData[leftAxisIndex]
 		rightLight := state.AxisData[rightAxisIndex]
@@ -64,6 +79,7 @@ func main() {
 			maxRight = rightLight
 			minStick = stick
 			maxStick = stick
+			i++
 		} else {
 			if leftLight < minLeft {
 				minLeft = leftLight
@@ -116,10 +132,28 @@ func main() {
 		rightCalibrated = rightRange > 10000
 
 		if lp > 25 && leftCalibrated {
-			fmt.Println("LEFT!")
+			fmt.Println("Touched the left light sensor")
+			fmt.Println("Outputting MIDI data")
+
+			// note on events to play C major chord
+			out.WriteShort(0x90, 60, 100)
+			out.WriteShort(0x90, 64, 100)
+			out.WriteShort(0x90, 67, 100)
+
+			// notes will be sustained for 2 seconds
+			time.Sleep(2 * time.Second)
+
+			// note off events
+			out.WriteShort(0x80, 60, 100)
+			out.WriteShort(0x80, 64, 100)
+			out.WriteShort(0x80, 67, 100)
+
 		}
 		if rp > 25 && rightCalibrated {
-			fmt.Println("RIGHT!")
+			fmt.Println("Touched the right light sensor")
+			fmt.Println("Bye!")
+
+			break
 		}
 
 		fmt.Printf("[l] %d\t[r] %d\t[s] %d\n", lp, rp, sp)
